@@ -303,35 +303,12 @@ class Sequence(Dataset):
     def get_image_width_height(self):
         return self.height, self.width
 
+    #def __len__(self):
+        #return len(self.timestamps_flow)
     def __len__(self):
-        return len(self.timestamps_flow)
+        return len(self.timestamps_flow) - 1
 
-    def rectify_events(self, x: np.ndarray, y: np.ndarray):
-        # assert location in self.locations
-        # From distorted to undistorted
-        rectify_map = self.rectify_ev_map
-        assert rectify_map.shape == (
-            self.height, self.width, 2), rectify_map.shape
-        assert x.max() < self.width
-        assert y.max() < self.height
-        return rectify_map[y, x]
-    
-    def get_data(self, index) -> Dict[str, any]:
-        ts_start: int = self.timestamps_flow[index] - self.delta_t_us
-        ts_end: int = self.timestamps_flow[index]
-
-        file_index = self.indices[index]
-
-        output = {
-            'file_index': file_index,
-            'timestamp': self.timestamps_flow[index],
-            'seq_name': self.seq_name
-        }
-        # Save sample for benchmark submission
-        output['save_submission'] = file_index in self.idx_to_visualize
-        output['visualize'] = self.visualize_samples
-        event_data = self.event_slicer.get_events(
-            ts_start, ts_end)
+    def process_event_data(self, event_data):
         p = event_data['p']
         t = event_data['t']
         x = event_data['x']
@@ -344,20 +321,61 @@ class Sequence(Dataset):
         if self.voxel_grid is None:
             raise NotImplementedError
         else:
-            event_representation = self.events_to_voxel_grid(
-                p, t, x_rect, y_rect)
-            output['event_volume'] = event_representation
+            event_representation = self.events_to_voxel_grid(p, t, x_rect, y_rect)
+        return event_representation
+
+    def rectify_events(self, x: np.ndarray, y: np.ndarray):
+        # assert location in self.locations
+        # From distorted to undistorted
+        rectify_map = self.rectify_ev_map
+        assert rectify_map.shape == (
+            self.height, self.width, 2), rectify_map.shape
+        assert x.max() < self.width
+        assert y.max() < self.height
+        return rectify_map[y, x]
+    
+    def get_data(self, index) -> Dict[str, any]:
+        if index >= len(self.timestamps_flow) - 1:
+            raise IndexError("Index exceeds the number of available frames.")
+
+        ts_start_1 = self.timestamps_flow[index] - self.delta_t_us
+        ts_end_1 = self.timestamps_flow[index]
+        ts_start_2 = self.timestamps_flow[index]
+        ts_end_2 = self.timestamps_flow[index + 1]
+
+        file_index = self.indices[index]
+
+        output = {
+            'file_index': file_index,
+            'timestamp': self.timestamps_flow[index],
+            'seq_name': self.seq_name
+        }
+        # Save sample for benchmark submission
+        output['save_submission'] = file_index in self.idx_to_visualize
+        output['visualize'] = self.visualize_samples
+
+        # Get events for both frames
+        event_data_1 = self.event_slicer.get_events(ts_start_1, ts_end_1)
+        event_data_2 = self.event_slicer.get_events(ts_start_2, ts_end_2)
+
+        # Rectify and convert events for both frames
+        event_representation_1 = self.process_event_data(event_data_1)
+        event_representation_2 = self.process_event_data(event_data_2)
+
+        # Combine the two event representations
+        combined_event_representation = torch.cat([event_representation_1, event_representation_2], dim=0)
+        
+        output['event_volume'] = combined_event_representation
         output['name_map'] = self.name_idx
         
         if self.load_gt:
-            output['flow_gt'
-                ] = [torch.tensor(x) for x in self.load_flow(self.flow_png[index])]
+            flow_gt = [torch.tensor(x) for x in self.load_flow(self.flow_png[index])]
+            flow_gt[0] = torch.moveaxis(flow_gt[0], -1, 0)
+            flow_gt[1] = torch.unsqueeze(flow_gt[1], 0)
+            output['flow_gt'] = flow_gt
 
-            output['flow_gt'
-                ][0] = torch.moveaxis(output['flow_gt'][0], -1, 0)
-            output['flow_gt'
-                ][1] = torch.unsqueeze(output['flow_gt'][1], 0)
         return output
+
 
     def __getitem__(self, idx):
         sample = self.get_data(idx)

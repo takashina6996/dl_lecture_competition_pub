@@ -43,9 +43,9 @@ def deep_supervision(predictions, targets, weights):
     for i in range(len(predictions)):
         # 出力をターゲットサイズにリサイズ
         list_name = 'flow'+str(index)
-        print(predictions[list_name].size())
+        #print(predictions[list_name].size())
         prediction_resized = F.interpolate(predictions[list_name], size=targets.size()[2:], mode='bilinear', align_corners=False)
-        print(prediction_resized.size())
+        #print(prediction_resized.size())
         # クロスエントロピーロスの計算
         loss = compute_epe_error(prediction_resized, targets)
         total_loss += weights[i] * loss
@@ -128,7 +128,7 @@ def main(args: DictConfig):
     #       Model
     # ------------------
     model = EVFlowNet(args.train).to(device)
-
+    #model.load_state_dict(torch.load('model.pth'))
     # ------------------
     #   optimizer
     # ------------------
@@ -137,6 +137,7 @@ def main(args: DictConfig):
     #   Start training
     # ------------------
     model.train()
+    model_path = f"model.pth"
     for epoch in range(args.train.epochs):
         total_loss = 0
         print("on epoch: {}".format(epoch+1))
@@ -147,9 +148,9 @@ def main(args: DictConfig):
             flow_dict = model(event_image) # flow_dict['flow3'] = [B, 2, 480, 640]
             #print(flow_dict['flow0'], flow_dict['flow1'], flow_dict['flow2'], flow_dict['flow3'])
             #print(flow_dict['flow0'].shape, flow_dict['flow1'].shape, flow_dict['flow2'].shape, flow_dict['flow3'].shape)
-            #loss: torch.Tensor = compute_epe_error(flow_dict['flow3'], ground_truth_flow)
+            loss: torch.Tensor = compute_epe_error(flow_dict['flow3'], ground_truth_flow)
             weights = [0.5, 0.3, 0.2,1]
-            loss: torch.Tensor = deep_supervision(flow_dict, ground_truth_flow,weights)
+            #loss: torch.Tensor = deep_supervision(flow_dict, ground_truth_flow,weights)
             print(f"batch {i} loss: {loss.item()}")
             optimizer.zero_grad()
             loss.backward()
@@ -157,16 +158,14 @@ def main(args: DictConfig):
 
             total_loss += loss.item()
         print(f'Epoch {epoch+1}, Loss: {total_loss / len(train_data)}')
-
     # Create the directory if it doesn't exist
     if not os.path.exists('checkpoints'):
         os.makedirs('checkpoints')
-    
     current_time = time.strftime("%Y%m%d%H%M%S")
     model_path = f"checkpoints/model_{current_time}.pth"
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
-
+    
     # ------------------
     #   Start predicting
     # ------------------
