@@ -128,7 +128,7 @@ def main(args: DictConfig):
     #       Model
     # ------------------
     model = EVFlowNet(args.train).to(device)
-    #model.load_state_dict(torch.load('model.pth'))
+    model.load_state_dict(torch.load('model.pth'))
     # ------------------
     #   optimizer
     # ------------------
@@ -137,7 +137,7 @@ def main(args: DictConfig):
     #   Start training
     # ------------------
     model.train()
-    model_path = f"model.pth"
+    model_path = "model.pth"
     for epoch in range(args.train.epochs):
         total_loss = 0
         print("on epoch: {}".format(epoch+1))
